@@ -25,7 +25,10 @@ class AppConfig {
     return 'http://localhost:8080';
   }
 
-  static const Duration requestTimeout = Duration(seconds: 12);
+  /// How long to wait for the server. Free hosting plans put an idle server to sleep and need about a minute to
+  /// wake it, so a build for hosted use raises this:  --dart-define=API_TIMEOUT_SECONDS=90
+  static const int _timeoutSeconds = int.fromEnvironment('API_TIMEOUT_SECONDS', defaultValue: 15);
+  static const Duration requestTimeout = Duration(seconds: _timeoutSeconds);
 
   /// OAuth *Web* client id from Google Cloud Console (a client id is public; never put a client secret in the app).
   /// Google sign-in stays disabled until it is given:

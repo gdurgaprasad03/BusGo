@@ -1,0 +1,37 @@
+# Render "Blueprint": tells Render how to run the BusGo backend from this GitHub repository.
+# Secrets are NOT stored here. Every value marked sync:false is typed into the Render dashboard.
+# Step-by-step instructions: docs/DEPLOY_RENDER.md
+services:
+  - type: web
+    name: busgo-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free                  # free plans sleep after 15 minutes without traffic (first request then takes ~1 minute)
+    healthCheckPath: /api/health
+    autoDeploy: true            # redeploys when you push to GitHub
+    envVars:
+      # --- database (MySQL hosted elsewhere, e.g. Aiven) ---
+      - key: DB_URL
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      # --- security ---
+      - key: JWT_SECRET
+        generateValue: true     # Render creates a long random secret for you
+      - key: FORWARD_HEADERS_STRATEGY
+        value: native           # Render sits in front of the app; use the real client address for rate limiting
+      # --- email over HTTPS (Render's free plan blocks SMTP) ---
+      - key: MAIL_ENABLED
+        value: "true"
+      - key: MAIL_PROVIDER
+        value: brevo
+      - key: BREVO_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false             # e.g. BusGo <your verified sender email>
+      # --- optional: Google sign-in (leave empty until configured) ---
+      - key: GOOGLE_CLIENT_IDS
+        sync: false

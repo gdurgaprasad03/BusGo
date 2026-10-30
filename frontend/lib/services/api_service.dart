@@ -219,8 +219,12 @@ class ApiService {
       final streamed = await _client.send(request).timeout(AppConfig.requestTimeout);
       response = await http.Response.fromStream(streamed);
     } on TimeoutException {
-      throw const ApiException(
-        'The server took too long to respond. Check that the backend is running, then try again.',
+      // A hosted (https) server on a free plan sleeps when idle and needs about a minute to wake up.
+      final hosted = _baseUrl.startsWith('https://');
+      throw ApiException(
+        hosted
+            ? 'The server is taking long to respond. It may be waking up after being idle: wait a minute and try again.'
+            : 'The server took too long to respond. Check that the backend is running, then try again.',
         isNetworkError: true,
       );
     } catch (_) {

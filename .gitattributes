@@ -1,0 +1,8 @@
+# Keep line endings stable across Windows and Linux. Shell scripts must be LF or they fail on Linux hosts.
+* text=auto
+mvnw text eol=lf
+*.sh text eol=lf
+*.cmd text eol=crlf
+*.apk binary
+*.png binary
+*.jpg binary
