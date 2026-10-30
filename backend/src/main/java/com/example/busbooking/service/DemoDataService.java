@@ -11,7 +11,9 @@ import com.example.busbooking.repository.OperatorRepository;
 import com.example.busbooking.repository.TripRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -170,6 +172,7 @@ public class DemoDataService {
     private final BusRepository busRepository;
     private final TripRepository tripRepository;
     private final JdbcTemplate jdbcTemplate;
+    private final TransactionTemplate transactions;
     private final List<Template> templates;
 
     /**
@@ -178,12 +181,14 @@ public class DemoDataService {
      */
     public DemoDataService(OperatorRepository operatorRepository, BusRepository busRepository,
                            TripRepository tripRepository, JdbcTemplate jdbcTemplate, DemoRouteCatalog routeCatalog,
+                           PlatformTransactionManager transactionManager,
                            @org.springframework.beans.factory.annotation.Value("${app.demo.include-generated-routes:true}")
                            boolean includeGeneratedRoutes) {
         this.operatorRepository = operatorRepository;
         this.busRepository = busRepository;
         this.tripRepository = tripRepository;
         this.jdbcTemplate = jdbcTemplate;
+        this.transactions = new TransactionTemplate(transactionManager);
         this.templates = buildTemplates(routeCatalog.routes(includeGeneratedRoutes));
     }
 
@@ -200,44 +205,59 @@ public class DemoDataService {
         seedUpcomingTrips();
     }
 
-    /** Adds whatever is missing for the next DAYS_AHEAD days. Safe to run repeatedly. */
-    @Transactional
+    /**
+     * Adds whatever is missing for the next DAYS_AHEAD days. Safe to run repeatedly.
+     * Each bus is saved in its own short transaction (not one huge one), so trips become searchable as soon as
+     * they are written, the hand-picked routes (first in the list) appear within minutes even on a slow remote
+     * database, and a restart keeps the progress already made. (reset() still wraps everything in one transaction.)
+     */
     public int seedUpcomingTrips() {
-        List<Operator> operators = new ArrayList<>();
-        for (OperatorSpec spec : OPERATORS) {
-            operators.add(operatorRepository.findByName(spec.name())
-                    .orElseGet(() -> operatorRepository.save(new Operator(spec.name(), new BigDecimal(spec.rating())))));
-        }
+        List<Operator> operators = transactions.execute(status -> {
+            List<Operator> list = new ArrayList<>();
+            for (OperatorSpec spec : OPERATORS) {
+                list.add(operatorRepository.findByName(spec.name())
+                        .orElseGet(() -> operatorRepository.save(new Operator(spec.name(), new BigDecimal(spec.rating())))));
+            }
+            return list;
+        });
 
         int created = 0;
-        LocalDate today = LocalDate.now();
         for (int i = 0; i < templates.size(); i++) {
-            Template t = templates.get(i);
-            List<SeatSpec> layout = layoutFor(t.type());
-            String registration = String.format("DEMO-BUS-%03d", i + 1);
-            Bus bus = busRepository.findByRegistrationNumber(registration)
-                    .orElseGet(() -> busRepository.save(new Bus(operators.get(t.operator()), registration, t.type(), layout.size())));
+            final int index = i;
+            Integer added = transactions.execute(status -> seedTemplate(index, operators));
+            created += added == null ? 0 : added;
+        }
+        return created;
+    }
 
-            // Self-healing: if a route was renamed in the data files (e.g. Goa became Panaji), fix this bus's
-            // existing trips instead of leaving old names behind or skipping them as "already created".
-            jdbcTemplate.update("UPDATE trips SET source = ?, destination = ?, boarding_point = ?, dropping_point = ? "
-                            + "WHERE bus_id = ? AND (source <> ? OR destination <> ?)",
-                    t.source(), t.destination(), boardingPoint(t.source()), droppingPoint(t.destination()),
-                    bus.getId(), t.source(), t.destination());
+    private int seedTemplate(int i, List<Operator> operators) {
+        int created = 0;
+        LocalDate today = LocalDate.now();
+        Template t = templates.get(i);
+        List<SeatSpec> layout = layoutFor(t.type());
+        String registration = String.format("DEMO-BUS-%03d", i + 1);
+        Bus bus = busRepository.findByRegistrationNumber(registration)
+                .orElseGet(() -> busRepository.save(new Bus(operators.get(t.operator()), registration, t.type(), layout.size())));
 
-            // One query per bus (instead of one per day) to learn which days already have a trip.
-            Set<LocalDateTime> existing = new HashSet<>(tripRepository.departureTimesFrom(bus.getId(), today.atStartOfDay()));
-            for (int day = 0; day < daysAhead; day++) {
-                LocalDateTime departure = today.plusDays(day).atTime(LocalTime.parse(t.departure()));
-                if (existing.contains(departure)) {
-                    continue;
-                }
-                Trip trip = tripRepository.save(new Trip(bus, t.source(), t.destination(), departure,
-                        departure.plusMinutes(t.durationMinutes()), BigDecimal.valueOf(t.fare()),
-                        boardingPoint(t.source()), droppingPoint(t.destination())));
-                insertSeats(trip, layout, t.bookedPercent());
-                created++;
+        // Self-healing: if a route was renamed in the data files (e.g. Goa became Panaji), fix this bus's
+        // existing trips instead of leaving old names behind or skipping them as "already created".
+        jdbcTemplate.update("UPDATE trips SET source = ?, destination = ?, boarding_point = ?, dropping_point = ? "
+                        + "WHERE bus_id = ? AND (source <> ? OR destination <> ?)",
+                t.source(), t.destination(), boardingPoint(t.source()), droppingPoint(t.destination()),
+                bus.getId(), t.source(), t.destination());
+
+        // One query per bus (instead of one per day) to learn which days already have a trip.
+        Set<LocalDateTime> existing = new HashSet<>(tripRepository.departureTimesFrom(bus.getId(), today.atStartOfDay()));
+        for (int day = 0; day < daysAhead; day++) {
+            LocalDateTime departure = today.plusDays(day).atTime(LocalTime.parse(t.departure()));
+            if (existing.contains(departure)) {
+                continue;
             }
+            Trip trip = tripRepository.save(new Trip(bus, t.source(), t.destination(), departure,
+                    departure.plusMinutes(t.durationMinutes()), BigDecimal.valueOf(t.fare()),
+                    boardingPoint(t.source()), droppingPoint(t.destination())));
+            insertSeats(trip, layout, t.bookedPercent());
+            created++;
         }
         return created;
     }
