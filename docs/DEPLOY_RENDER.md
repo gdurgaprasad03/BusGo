@@ -47,6 +47,21 @@ paid plan.
    (after a wake-up delay if the service was idle).
 6. `https://<your-service>.onrender.com/api/auth/config` should show `"emailEnabled":true`.
 
+**Creating the service by hand instead of the Blueprint** (the "New > Web Service" form):
+
+| Field | Value |
+|---|---|
+| Language | `Docker` |
+| Branch | `main` |
+| Root Directory | **leave empty** |
+| Dockerfile Path | `./Dockerfile` (the default; the file is at the top of the repository) |
+| Docker build context | the default (`.`) |
+| Instance type | `Free` |
+| Health Check Path (Advanced) | `/api/health` |
+
+Do not set Root Directory to `backend` and do not pick a folder in the Dockerfile Path dropdown: the Dockerfile copies from the
+`backend/` folder itself, so it must be built from the repository root. (An earlier version of this guide said otherwise and failed with
+`COPY .mvn ... not found`.)
 **First start:** the app creates about 10,000 demo trips in the background. Over a remote database this can take several minutes;
 searches show fewer buses until the log line `Demo data check complete` appears (Render > Logs). If the service runs out of
 memory on the free plan, add the variable `APP_DEMO_INCLUDE_GENERATED_ROUTES` = `false` (about a third of the data) or move to a larger plan.

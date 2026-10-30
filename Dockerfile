@@ -1,10 +1,13 @@
+# Builds the BusGo backend. This file sits at the TOP of the repository so Render needs no special settings:
+# leave "Root Directory" empty and "Dockerfile Path" as ./Dockerfile.
+
 # Build stage: compiles the Spring Boot jar with the Maven wrapper (no Maven needed on the host).
 FROM eclipse-temurin:22-jdk AS build
 WORKDIR /build
-COPY .mvn/ .mvn/
-COPY mvnw pom.xml ./
+COPY backend/.mvn/ .mvn/
+COPY backend/mvnw backend/pom.xml ./
 RUN chmod +x mvnw && ./mvnw -q -B dependency:go-offline
-COPY src/ src/
+COPY backend/src/ src/
 RUN ./mvnw -q -B -DskipTests package && cp target/busbooking-*.jar app.jar
 
 # Run stage: a small Java runtime, running as a normal (non-root) user.

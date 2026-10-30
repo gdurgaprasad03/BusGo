@@ -5,8 +5,7 @@ services:
   - type: web
     name: busgo-api
     runtime: docker
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
+    dockerfilePath: ./Dockerfile   # at the top of the repository (builds the backend folder)
     plan: free                  # free plans sleep after 15 minutes without traffic (first request then takes ~1 minute)
     healthCheckPath: /api/health
     autoDeploy: true            # redeploys when you push to GitHub

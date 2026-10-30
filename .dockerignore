@@ -1,0 +1,8 @@
+.git
+frontend/
+docs/
+tools/
+backend/target/
+backend/application-local.properties
+*.apk
+*.log
